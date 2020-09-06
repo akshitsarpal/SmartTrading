@@ -5,15 +5,12 @@ from string import digits
 import datetime as dt
 from alpha_vantage.timeseries import TimeSeries
 from multiprocessing import Pool, cpu_count
-import logging
+
 from constants import *
+from args import parse_args
+from logger import logger
 
 # os.environ["ALPHAVANTAGE_API_KEY"] = "MY_API_KEY"
-
-def remove_digits(input_str):
-    remove_digits = str.maketrans('', '', digits)
-    res = input_str.translate(remove_digits)
-    return res
 
 
 class Stock(object):
@@ -22,7 +19,7 @@ class Stock(object):
     '''
     def __init__(self, tickers_list=[],stock_index=None,
                  price_type=None, ts=None, after_hours=False, 
-                 start_date=None):
+                 start_date=None, save_csv=False):
         self.tickers_df = None
         self.tickers_list = tickers_list
         self.stock_index = stock_index
@@ -31,11 +28,31 @@ class Stock(object):
         self.prices_df = None
         self.after_hours = after_hours
         self.start_date = start_date
+        self.save_csv = save_csv
         
     def _remove_digits(self, input_str):
         remove_digits = str.maketrans('', '', digits)
         res = input_str.translate(remove_digits)
         return res
+
+
+    def _check_start_date_format(self):
+        if not self.start_date:
+            self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_intra))
+            logger.info('''
+            {ticker}: "start_date" not specified, using default of {dy}
+            (business) days, with start date of {dt}.
+            '''.format(ticker=stock_ticker, dy=default_days_intra, 
+                       dt=self.start_date.isoformat()))
+            return
+        elif isinstance(self.start_date, str):
+            self.start_date = pd.Timestamp(self.start_date)
+            return
+        elif isinstance(self.start_date, pd.Timestamp):
+            return
+        else:
+            ValueError('Check "start_date" format - should be passed as "yyyy-mm-dd" string.')
+
         
     def get_tickers_index(self):
         '''
@@ -77,6 +94,41 @@ class Stock(object):
             raise ValueError(e)
         
 
+    def get_prices_av(self, stock_ticker):
+        '''
+        Extract prices using the API.
+        '''
+        self._check_start_date_format()
+        if self.price_type in ['intraday', 'daily']:
+            try:
+                if self.price_type == 'intraday':
+                    price, _ = self.ts.get_intraday(stock_ticker, outputsize='full')
+                elif self.price_type == 'daily':
+                    price, _ = self.ts.get_daily(stock_ticker, outputsize='full')
+                price_df = pd.DataFrame(price).transpose()
+            except:
+                logger.info('{ticker}: Skipped by Alphavantage.'.format(ticker=stock_ticker))
+                price_df = pd.DataFrame(columns=['index', '1. open', '2. high', '3. low',
+                     '4. close', '5. volume']).set_index('index')
+        else:
+            ValueError('"price_type" must be one of "intraday" or "daily".')
+        
+        price_df.index = pd.to_datetime(price_df.index)
+        price_df = price_df[price_df.index >= self.start_date]
+        if self.price_type == 'intraday' and not self.after_hours:
+            logger.info('''{ticker}: Truncating pre-market and after-hours data.
+                        '''.format(ticker=stock_ticker))
+            price_df = price_df[(price_df.index.time>=dt.time(9,30)) & 
+                                (price_df.index.time<=dt.time(16,0))]
+
+        price_df.columns = [self._remove_digits(col) for col in price_df.columns]
+        price_df.columns = [col.replace('. ', '') for col in price_df.columns]
+        price_df['ticker'] = stock_ticker
+        price_df = price_df.reset_index().rename({'index':'ts'}, axis=1) \
+            .set_index(['ticker', 'ts'])
+        return price_df
+
+
     def get_list_stock_prices(self):
         '''
         Fetch stock price for list of tickers.
@@ -85,69 +137,16 @@ class Stock(object):
             raise KeyError('tickers_list not provided, either pass as argument or \
                 call get_tickers_index() method with index name to fetch tickers.')
         self.pool = Pool(cpu_count()-1)
-        prices_df_list = self.pool.map_async(self.get_individual_stock_price, self.tickers_list).get()
+        prices_df_list = self.pool.map_async(self.get_prices_av, self.tickers_list).get()
         self.prices_df = pd.concat(prices_df_list)
-        
-    
-    def get_individual_stock_price(self, stock_ticker):
-        '''
-        Fetch stock price using the Alphavantage API. 
-        '''
-        if self.price_type == 'intraday':
-            if not self.start_date:
-                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_intra))
-                logger.info('''
-                {ticker}: "start_date" not specified, using default of {dy}
-                (business) days, with start date of {dt}.
-                '''.format(ticker=stock_ticker, dy=default_days_intra, 
-                           dt=self.start_date.isoformat()))
-            elif isinstance(self.start_date, pd.Timestamp):
-                logger.info('''{ticker}: Using previously defined "start_date" of {dt}.
-                               '''.format(ticker=stock_ticker, dt=self.start_date))
-            else:
-                self.start_date = pd.Timestamp(self.start_date)
-            price, meta_data = self.ts.get_intraday(stock_ticker, outputsize='full')
-            price_df = pd.DataFrame(price).transpose()
-            price_df.index = pd.to_datetime(price_df.index)
-            price_df = price_df[price_df.index >= self.start_date]
-            if not self.after_hours:
-                logger.info('''{ticker}: Truncating pre-market and after-hours data.
-                            '''.format(ticker=stock_ticker))
-                price_df = price_df[(price_df.index.time>=dt.time(9,30)) & 
-                                    (price_df.index.time<=dt.time(16,0))]
-            price_df.columns = [self._remove_digits(col) for col in price_df.columns]
-            price_df.columns = [col.replace('. ', '') for col in price_df.columns]
-            price_df['ticker'] = stock_ticker
-            price_df = price_df.reset_index().rename({'index':'ts'}, axis=1) \
-                .set_index(['ticker', 'ts'])
-            return price_df
-        
-        elif self.price_type == 'daily':
-            if not self.start_date:
-                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_daily))
-                logger.info('''
-                {ticker}: "start_date" not specified, using default of {dy}
-                (business) days, with start date of {dt}.
-                '''.format(ticker=stock_ticker, dy=default_days_daily,
-                           dt=self.start_date.isoformat()))
-            elif isinstance(self.start_date, pd.Timestamp):
-                logger.info('''{ticker}: Using previously defined "start_date" of {dt}.
-                               '''.format(ticker=stock_ticker, dt=self.start_date))
-            else:
-                self.start_date = pd.Timestamp(self.start_date)
-            price, meta_data = self.ts.get_daily(stock_ticker, outputsize='full')
-            price_df = pd.DataFrame(price).transpose()
-            price_df.index = pd.to_datetime(price_df.index)
-            price_df = price_df[price_df.index >= self.start_date]
-            price_df.columns = [self._remove_digits(col) for col in price_df.columns]
-            price_df.columns = [col.replace('. ', '') for col in price_df.columns]
-            price_df['ticker'] = stock_ticker
-            price_df = price_df.reset_index().rename({'index':'ts'}, axis=1) \
-                .set_index(['ticker', 'ts'])
-            return price_df
-        
-        else:
-            raise ValueError('"price_type" must be one of "daily" or "intraday"')
+        if self.save_csv:
+            try:
+                today = dt.date.today().strftime('%Y_%m_%d')
+                self.prices_df.to_csv(price_store_path+self.price_type+'_prices_'+today+'.csv', index=True)
+                logger.info('Saved prices.')
+            except:
+                logger.warning('Could not save prices.')
+
     
     def __getstate__(self):
         self_dict = self.__dict__.copy()
@@ -159,17 +158,19 @@ class Stock(object):
 
 
 if __name__=='__main__':
-    logging.basicConfig()
-    logging.root.setLevel(logging.NOTSET)
-    logging.basicConfig(level=logging.NOTSET)
-    logger = logging.getLogger("ExtractData")
+
+    logger = logger('ExtractDate')
+    args = parse_args()
+    tickers_list = args.tickers_list
+    stock_index = args.stock_index
+    price_type = args.price_type
+    after_hours = args.after_hours
+    start_date = args.start_date
+    save_csv = args.save_csv
 
     ts = TimeSeries()
-
-    s = Stock(price_type='intraday', ts=ts)
+    s = Stock(tickers_list=[], stock_index=stock_index,
+              price_type=price_type, ts=ts, after_hours=after_hours, 
+              start_date=start_date, save_csv=save_csv)
     s.get_tickers_index()
     s.get_list_stock_prices()
-
-    today = dt.date.today().strftime('%Y_%m_%d')
-    s.prices_df.to_csv(price_store_path+'prices_'+today+'.csv', index=True)
-    logger.info('Saved prices.')
