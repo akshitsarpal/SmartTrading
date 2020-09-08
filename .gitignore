@@ -1,0 +1,9 @@
+# Ignore Mac system files
+.DS_store
+
+# Ignore ipynb checkpoints
+.ipynb_checkpoints
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
