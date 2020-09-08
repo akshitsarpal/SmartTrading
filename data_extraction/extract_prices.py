@@ -9,7 +9,7 @@ import time
 
 from constants import *
 from args import parse_args
-from logger import logger
+from libs.st_logger.logger import logger
 
 os.environ["ALPHAVANTAGE_API_KEY"] = "100HED30C7HC9JMI"
 
@@ -19,7 +19,7 @@ class Stock(object):
     '''
     def __init__(self, tickers_list=[],stock_index=None,
                  price_type=None, ts=None, after_hours=False, 
-                 start_date=None, save_csv=False):
+                 start_date=None, save_csv=False, write_db=False):
         self.tickers_df = None
         self.tickers_list = tickers_list
         self.stock_index = stock_index
@@ -28,6 +28,8 @@ class Stock(object):
         self.after_hours = after_hours
         self.start_date = start_date
         self.save_csv = save_csv
+        self.write_db = write_db
+        self.logger = logger('ExtractPrices')
         
 
     def _remove_digits(self, input_str):
@@ -40,7 +42,7 @@ class Stock(object):
         if not self.start_date:
             if self.price_type == 'intraday':
                 self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_intra))
-                logger.info('''
+                self.logger.info('''
                 "start_date" not specified, using default of {dy}
                 (business) days, with start date of {dt}.
                 '''.format(dy=default_days_intra, 
@@ -48,7 +50,7 @@ class Stock(object):
                 return
             elif self.price_type == 'daily':
                 self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_daily))
-                logger.info('''
+                self.logger.info('''
                 "start_date" not specified, using default of {dy}
                 (business) days, with start date of {dt}.
                 '''.format(dy=default_days_daily, 
@@ -71,10 +73,10 @@ class Stock(object):
         '''
         if not self.stock_index:
             self.stock_index = 'SP500'
-            logger.warning('"stock_index" not specified, using default of "SP500".')
+            self.logger.warning('"stock_index" not specified, using default of "SP500".')
             
         if self.stock_index == 'SP500':
-            logger.info('Getting stock tickers for SP500 from Wiki .....')
+            self.logger.info('Getting stock tickers for SP500 from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
             self.tickers_df = payload[0]
             if len(self.tickers_df.index) >= 450:
@@ -84,10 +86,10 @@ class Stock(object):
             else:
                 ValueError('Check wikipedia data source for SP 500 at \
                              https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
-            logger.info('Fetched stock tickers from SP500.')
+            self.logger.info('Fetched stock tickers from SP500.')
             
         elif self.stock_index == 'NASDAQ':
-            logger.info('Getting stock tickers for NASDAQ from Wiki .....')
+            self.logger.info('Getting stock tickers for NASDAQ from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
             if len(self.tickers_df.index) >= 90:
@@ -96,7 +98,7 @@ class Stock(object):
             else:
                 ValueError('Check wikipedia data source for NASDAQ at \
                              https://en.wikipedia.org/wiki/NASDAQ-100#Components')
-            logger.info('Fetched stock tickers from NASDAQ.')
+            self.logger.info('Fetched stock tickers from NASDAQ.')
             
         else:
             e = str('stock_index value '+ self.stock_index + ' not defined')
@@ -115,7 +117,7 @@ class Stock(object):
                     price, _ = self.ts.get_daily(stock_ticker, outputsize='full')
                 price_df = pd.DataFrame(price).transpose()
             except:
-                logger.info('{ticker}: Skipped by Alphavantage.'.format(ticker=stock_ticker))
+                self.logger.info('{ticker}: Skipped by Alphavantage.'.format(ticker=stock_ticker))
                 price_df = pd.DataFrame(columns=['index', '1. open', '2. high', '3. low',
                      '4. close', '5. volume']).set_index('index')
         else:
@@ -124,7 +126,7 @@ class Stock(object):
         price_df.index = pd.to_datetime(price_df.index)
         price_df = price_df[price_df.index >= self.start_date]
         if self.price_type == 'intraday' and not self.after_hours:
-            logger.info('''{ticker}: Truncating pre-market and after-hours data.
+            self.logger.info('''{ticker}: Truncating pre-market and after-hours data.
                         '''.format(ticker=stock_ticker))
             price_df = price_df[(price_df.index.time>=dt.time(9,30)) & 
                                 (price_df.index.time<=dt.time(16,0))]
@@ -153,19 +155,27 @@ class Stock(object):
                                 for i in range(0, len(self.tickers_list), n_proc)]
         for chunk in tickers_list_chunked:
             prices_df_list = self.pool.map_async(self.get_prices_av, chunk).get()
+
+            if self.write_db:
+                for ticker_prices in prices_df_list:
+                    if len(ticker_prices.index) > 0:
+                        try:
+                            self.st_db.executeWriteQuery(ticker_prices)
+                        except:
+                            self.logger.info('{}: Could not write to DB.'.format(ticker_prices.index.levels[0][0]))
+            
+
             if self.save_csv:
                 for ticker_prices in prices_df_list:
                     if len(ticker_prices.index) > 0:
                         try:
                             today = dt.date.today().strftime('%Y_%m_%d')
-                            print(type(ticker_prices))
-                            print(ticker_prices.shape)
                             ticker_prices.to_csv(price_store_path+ticker_prices.index.levels[0][0]+'_'+
                                                  self.price_type+'_'+today+'.csv', index=True)
-                            logger.info('{ticker}: Saved prices.'.format(ticker=ticker_prices.index.levels[0][0]))
+                            self.logger.info('{}: Saved prices.'.format(ticker_prices.index.levels[0][0]))
                         except:
-                            logger.warning('Could not save prices.')
-            logger.info("System sleep {} sec ....".format(sleep_time_sec))
+                            self.logger.warning('Could not save prices.')
+            self.logger.info("System sleep {} sec ....".format(sleep_time_sec))
             time.sleep(sleep_time_sec)
         self.pool.close()
         self.pool.join() 
@@ -182,8 +192,7 @@ class Stock(object):
 
 
 if __name__=='__main__':
-
-    logger = logger('ExtractDate')
+    
     args = parse_args()
     tickers_list = args.tickers_list
     stock_index = args.stock_index
@@ -191,11 +200,12 @@ if __name__=='__main__':
     after_hours = args.after_hours
     start_date = args.start_date
     save_csv = args.save_csv
+    write_db = args.write_db
 
     ts = TimeSeries()
     s = Stock(tickers_list=[], stock_index=stock_index,
               price_type=price_type, ts=ts, after_hours=after_hours, 
-              start_date=start_date, save_csv=save_csv)
+              start_date=start_date, save_csv=save_csv, write_db=write_db)
     s.get_tickers_index()
     s.get_list_stock_prices()
 
