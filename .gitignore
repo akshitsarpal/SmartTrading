@@ -7,3 +7,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+
+# Ignore passwords
+auth.py
