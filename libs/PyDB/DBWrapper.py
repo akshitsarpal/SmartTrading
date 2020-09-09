@@ -43,9 +43,12 @@ class DBWrapper(object):
             if index:
                 df.reset_index(inplace=True)
             cols = "`,`".join([str(i) for i in df.columns.tolist()])
+            update_values = ", ".join(["`"+str(i)+"`= new.`"+str(i)+"`" for i in df.columns.tolist()])
             for index, row in df.iterrows():
-                query = '''INSERT INTO {table} (`{cols}`) 
-                VALUES {row}'''.format(table=table, cols=cols, row=tuple(row.values))
+                query = '''INSERT INTO {table} (`{cols}`)
+                VALUES {row} as new
+                ON DUPLICATE KEY UPDATE {uv}
+                '''.format(table=table, cols=cols, row=tuple(row.values), uv=update_values)
                 self.cursor.execute(query)
                 self.con.commit()
             self.logger.info('''Successfully inserted {r} rows to {table}
