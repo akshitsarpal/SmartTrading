@@ -2,6 +2,7 @@ import mysql.connector
 from os import environ
 from pdb import set_trace
 from libs.st_logger.logger import logger
+import pandas as pd
 
 
 class DBWrapper(object):
