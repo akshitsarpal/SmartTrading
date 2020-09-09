@@ -83,8 +83,8 @@ class Stock(object):
             self.logger.info('Getting stock tickers for SP500 from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
             self.tickers_df = payload[0]
-            if len(self.tickers_df.index) >= 450:
-                self.tickers_df = self.tickers_df.head(6) #TODO: remove this
+            if (len(self.tickers_df.index) > sp500_ll) and (len(self.tickers_df.index) < sp500_ul):
+                self.tickers_df = self.tickers_df #TODO: remove this
                 self.tickers_ds = self.tickers_df.rename({'Symbol':'Ticker'}, axis=1)
                 self.tickers_list = list(self.tickers_df['Symbol'])
             else:
@@ -96,8 +96,8 @@ class Stock(object):
             self.logger.info('Getting stock tickers for NASDAQ from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
-            if len(self.tickers_df.index) >= 90:
-                self.tickers_df = self.tickers_df.head(6) #TODO: remove this
+            if (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
+                self.tickers_df = self.tickers_df #TODO: remove this
                 self.tickers_list = list(self.tickers_df['Ticker'])
             else:
                 ValueError('Check wikipedia data source for NASDAQ at \
@@ -159,6 +159,7 @@ class Stock(object):
                                 for i in range(0, len(self.tickers_list), n_proc)]
         for chunk in tickers_list_chunked:
             prices_df_list = self.pool.map_async(self.get_prices_av, chunk).get()
+            t_start = time.time()
 
             if self.write_db:
                 for ticker_prices in prices_df_list:
@@ -168,7 +169,6 @@ class Stock(object):
                         except:
                             self.logger.info('{}: Could not write to DB.'.format(ticker_prices.index.levels[0][0]))
             
-
             if self.save_csv:
                 for ticker_prices in prices_df_list:
                     if len(ticker_prices.index) > 0:
@@ -179,8 +179,11 @@ class Stock(object):
                             self.logger.info('{}: Saved prices.'.format(ticker_prices.index.levels[0][0]))
                         except:
                             self.logger.warning('Could not save prices.')
-            self.logger.info("System sleep {} sec ....".format(sleep_time_sec))
-            time.sleep(sleep_time_sec)
+            t_elapsed = round(time.time() - t_start, 2)
+            if t_elapsed < sleep_time_sec:
+                self.logger.info("System sleep {} sec ....".format(sleep_time_sec - t_elapsed))
+                time.sleep(sleep_time_sec - t_elapsed)
+
         self.pool.close()
         self.pool.join() 
 
