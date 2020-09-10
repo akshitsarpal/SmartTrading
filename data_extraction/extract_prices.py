@@ -21,7 +21,7 @@ class Stock(object):
     '''
     def __init__(self, tickers_list=[],stock_index=None,
                  price_type=None, ts=None, after_hours=False, 
-                 start_date=None, save_csv=False, write_db=False,
+                 start_date=None, write_csv=False, write_db=False,
                  st_db=None):
         self.tickers_df = None
         self.tickers_list = tickers_list
@@ -30,7 +30,7 @@ class Stock(object):
         self.ts = ts
         self.after_hours = after_hours
         self.start_date = start_date
-        self.save_csv = save_csv
+        self.write_csv = write_csv
         self.write_db = write_db
         self.st_db = st_db
         self.logger = logger('ExtractPrices')
@@ -97,7 +97,7 @@ class Stock(object):
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
             if (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
-                self.tickers_df = self.tickers_df #TODO: remove this
+                self.tickers_df = self.tickers_df.head(2) #TODO: remove this
                 self.tickers_list = list(self.tickers_df['Ticker'])
             else:
                 ValueError('Check wikipedia data source for NASDAQ at \
@@ -143,6 +143,31 @@ class Stock(object):
         return price_df
 
 
+    def write_to_db(self, ticker_prices):
+        try:
+            if self.price_type == 'daily':
+                self.st_db.executeWriteQuery(ticker_prices, 'daily_prices', index=True)
+            elif self.price_type == 'intraday':
+                ticker_prices.index.names = ['ticker', 'ts']
+                self.st_db.executeWriteQuery(ticker_prices, 'intraday_prices', index=True)
+            else:
+                ValueError('"price_type" must be in "daily" or "intraday"')
+        except:
+            ticker = ticker_prices.index.levels[0][0]
+            self.logger.info('{}: Could not write to DB.'.format(ticker))
+
+
+    def write_to_csv(self, ticker_prices, today):
+        ticker = ticker_prices.index.levels[0][0]
+        try:
+            filepath = price_store_path + ticker + '_' + \
+                       self.price_type + '_' + today + '.csv'
+            ticker_prices.to_csv(filepath, index=True)
+            self.logger.info('{}: Saved prices.'.format(ticker))
+        except:
+            self.logger.warning('{}: Could not save prices.'.format(ticker))
+    
+
     def get_list_stock_prices(self):
         '''
         Fetch stock price for list of tickers.
@@ -153,6 +178,10 @@ class Stock(object):
                 call get_tickers_index() method with index name to fetch tickers.')
         n_proc = max(cpu_count()-1, 4)
         self.pool = Pool(n_proc)
+        today = dt.date.today().strftime('%Y_%m_%d')
+        if not os.path.isdir(price_store_path):
+            os.mkdir(price_store_path)
+            self.logger.info('Created directory to save csvs: {}'.format(price_store_path))
         
         # Split into chunks of no more than 5 since Alpha Vantage API takes 5 calls per min 
         tickers_list_chunked = [self.tickers_list[i:i+n_proc] 
@@ -164,21 +193,13 @@ class Stock(object):
             if self.write_db:
                 for ticker_prices in prices_df_list:
                     if len(ticker_prices.index) > 0:
-                        try:
-                            self.st_db.executeWriteQuery(ticker_prices, 'daily_prices', index=True)
-                        except:
-                            self.logger.info('{}: Could not write to DB.'.format(ticker_prices.index.levels[0][0]))
+                        self.write_to_db(ticker_prices)
             
-            if self.save_csv:
+            if self.write_csv:
                 for ticker_prices in prices_df_list:
                     if len(ticker_prices.index) > 0:
-                        try:
-                            today = dt.date.today().strftime('%Y_%m_%d')
-                            ticker_prices.to_csv(price_store_path+ticker_prices.index.levels[0][0]+'_'+
-                                                 self.price_type+'_'+today+'.csv', index=True)
-                            self.logger.info('{}: Saved prices.'.format(ticker_prices.index.levels[0][0]))
-                        except:
-                            self.logger.warning('Could not save prices.')
+                        self.write_to_csv(ticker_prices, today)
+
             t_elapsed = round(time.time() - t_start, 2)
             if t_elapsed < sleep_time_sec:
                 self.logger.info("System sleep {} sec ....".format(sleep_time_sec - t_elapsed))
@@ -206,7 +227,7 @@ if __name__=='__main__':
     price_type = args.price_type
     after_hours = args.after_hours
     start_date = args.start_date
-    save_csv = args.save_csv
+    write_csv = args.write_csv
     write_db = args.write_db
 
     st_db = DBWrapper('SMART_TRADING')
@@ -214,7 +235,7 @@ if __name__=='__main__':
     ts = TimeSeries()
     s = Stock(tickers_list=[], stock_index=stock_index,
               price_type=price_type, ts=ts, after_hours=after_hours, 
-              start_date=start_date, save_csv=save_csv, write_db=write_db,
+              start_date=start_date, write_csv=write_csv, write_db=write_db,
               st_db=st_db)
     s.get_tickers_index()
     s.get_list_stock_prices()
