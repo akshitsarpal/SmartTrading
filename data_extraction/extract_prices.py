@@ -84,7 +84,6 @@ class Stock(object):
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
             self.tickers_df = payload[0]
             if (len(self.tickers_df.index) > sp500_ll) and (len(self.tickers_df.index) < sp500_ul):
-                self.tickers_df = self.tickers_df #TODO: remove this
                 self.tickers_ds = self.tickers_df.rename({'Symbol':'Ticker'}, axis=1)
                 self.tickers_list = list(self.tickers_df['Symbol'])
             else:
@@ -97,7 +96,6 @@ class Stock(object):
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
             if (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
-                self.tickers_df = self.tickers_df.head(2) #TODO: remove this
                 self.tickers_list = list(self.tickers_df['Ticker'])
             else:
                 ValueError('Check wikipedia data source for NASDAQ at \
