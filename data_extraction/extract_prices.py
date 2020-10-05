@@ -25,7 +25,14 @@ class Stock(object):
                  st_db=None):
         self.tickers_df = None
         self.tickers_list = tickers_list
-        self.stock_index = stock_index
+        if stock_index in ['NASDAQ', 'SP500']:
+            self.stock_index = stock_index
+        elif not stock_index:
+            self.stock_index = 'NASDAQ'
+            self.logger.warning('"stock_index" not specified, using default of "NASDAQ".')
+        else:
+            e = str('stock_index value '+ self.stock_index + ' not defined')
+            raise ValueError(e)
         self.price_type = price_type
         self.ts = ts
         self.after_hours = after_hours
@@ -69,24 +76,16 @@ class Stock(object):
             ValueError('Check "start_date" format - should be passed as "yyyy-mm-dd" string.')
 
         
-    def get_tickers_index(self):
+    def _refresh_tickers_index(self):
         '''
         Get the list of all stocks in a given index.
-        TODO: Change this to a regular ETL that saves any changes to file system
-              and read from there for stability.
         '''
-        if not self.stock_index:
-            self.stock_index = 'SP500'
-            self.logger.warning('"stock_index" not specified, using default of "SP500".')
-            
         if self.stock_index == 'SP500':
             self.logger.info('Getting stock tickers for SP500 from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
             self.tickers_df = payload[0]
-            if (len(self.tickers_df.index) > sp500_ll) and (len(self.tickers_df.index) < sp500_ul):
-                self.tickers_ds = self.tickers_df.rename({'Symbol':'Ticker'}, axis=1)
-                self.tickers_list = list(self.tickers_df['Symbol'])
-            else:
+            self.tickers_df = self.tickers_df.rename({'Symbol':'Ticker'}, axis=1)
+            if not (len(self.tickers_df.index) > sp500_ll) and (len(self.tickers_df.index) < sp500_ul):
                 ValueError('Check wikipedia data source for SP 500 at \
                              https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
             self.logger.info('Fetched stock tickers from SP500.')
@@ -95,17 +94,42 @@ class Stock(object):
             self.logger.info('Getting stock tickers for NASDAQ from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
-            if (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
-                self.tickers_list = list(self.tickers_df['Ticker'])
-            else:
+            if not (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
                 ValueError('Check wikipedia data source for NASDAQ at \
                              https://en.wikipedia.org/wiki/NASDAQ-100#Components')
             self.logger.info('Fetched stock tickers from NASDAQ.')
             
-        else:
-            e = str('stock_index value '+ self.stock_index + ' not defined')
-            raise ValueError(e)
+       
+
+
+    def update_tickers_db(self):
+        self._refresh_tickers_index()
+        if self.stock_index == 'SP500':
+            df = self.tickers_df.rename({'Symbol': 'ticker', 'Security': 'company'},
+                                        axis=1)
+            df['stock_index'] = 'SP500'
+            self.st_db.executeWriteQuery(df[['ticker', 'company', 'stock_index']], 
+                                         'tickers')
+        elif self.stock_index == 'NASDAQ':
+            df = self.tickers_df.rename({'Company': 'company', 'Ticker': 'ticker'}, 
+                                        axis=1)
+            df['stock_index'] = 'NASDAQ'
+            self.st_db.executeWriteQuery(df, 'tickers')
         
+
+
+    def get_tickers_from_index(self):
+        qry = '''
+        SELECT
+            *
+        FROM
+            SMART_TRADING.tickers
+        WHERE 
+            stock_index = '{}'
+        '''.format(self.stock_index)
+        self.tickers_df = self.st_db.executeReadQuery(qry)
+        self.tickers_list = list(self.tickers_df['ticker'])
+
 
     def get_prices_av(self, stock_ticker):
         '''
@@ -173,7 +197,7 @@ class Stock(object):
         self._check_start_date_format()
         if not self.tickers_list:
             raise KeyError('tickers_list not provided, either pass as argument or \
-                call get_tickers_index() method with index name to fetch tickers.')
+                call get_tickers_from_index() method with index name to fetch tickers.')
         n_proc = max(cpu_count()-1, 4)
         self.pool = Pool(n_proc)
         today = dt.date.today().strftime('%Y_%m_%d')
@@ -235,6 +259,6 @@ if __name__=='__main__':
               price_type=price_type, ts=ts, after_hours=after_hours, 
               start_date=start_date, write_csv=write_csv, write_db=write_db,
               st_db=st_db)
-    s.get_tickers_index()
+    s.get_tickers_from_index()
     s.get_list_stock_prices()
 
