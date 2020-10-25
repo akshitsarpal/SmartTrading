@@ -22,7 +22,8 @@ class Stock(object):
     def __init__(self, tickers_list=[],stock_index=None,
                  price_type=None, ts=None, after_hours=False, 
                  start_date=None, write_csv=False, write_db=False,
-                 st_db=None):
+                 st_db=None, st_logger=None):
+        self.logger = st_logger
         self.tickers_df = None
         self.tickers_list = tickers_list
         if stock_index in ['NASDAQ', 'SP500']:
@@ -40,7 +41,6 @@ class Stock(object):
         self.write_csv = write_csv
         self.write_db = write_db
         self.st_db = st_db
-        self.logger = logger('ExtractPrices')
         
 
     def _remove_digits(self, input_str):
@@ -243,6 +243,8 @@ class Stock(object):
 
 if __name__=='__main__':
     
+    st_logger = logger('ExtractPrices')
+
     args = parse_args()
     tickers_list = args.tickers_list
     stock_index = args.stock_index
@@ -255,10 +257,13 @@ if __name__=='__main__':
     st_db = DBWrapper('SMART_TRADING')
 
     ts = TimeSeries()
-    s = Stock(tickers_list=[], stock_index=stock_index,
+    s = Stock(tickers_list=tickers_list, stock_index=stock_index,
               price_type=price_type, ts=ts, after_hours=after_hours, 
               start_date=start_date, write_csv=write_csv, write_db=write_db,
-              st_db=st_db)
-    s.get_tickers_from_index()
+              st_db=st_db, st_logger=st_logger)
+    if not s.tickers_list:
+        s.get_tickers_from_index()
+        st_logger.info('Extracted stock tickers from Index: {}'.format(s.stock_index))
+    
     s.get_list_stock_prices()
 
