@@ -2,18 +2,21 @@ import os
 import pandas as pd
 import numpy as np
 import auth
+import datetime as dt
 from constants import *
 
 from libs.PyDB.DBWrapper import DBWrapper
 from libs.st_logger.logger import logger
+from argparse import ArgumentParser
 
 class Earnings(object):
     
-    def __init__(self, st_db, st_logger):
+    def __init__(self, st_db, st_logger, historical_earnings=False):
         import yahoo_earnings_calendar as YEC
         self._yec = YEC.YahooEarningsCalendar()
         self.st_db = st_db
         self.logger = st_logger
+        self.historical_earnings = historical_earnings
         self._cols = cols = ['ticker', 'ds', 'company_name', 'earnings_dt', 'datetime_type', 
             'eps_estimate', 'eps_actual','eps_surprise_pct', 'time_zone',
             'gmt_offset_ms', 'quote_type']
@@ -50,6 +53,11 @@ class Earnings(object):
         cols_float = ['eps_estimate', 'eps_actual', 'eps_surprise_pct']
         earnings_df[cols_float] = earnings_df[cols_float].astype(float)
         earnings_df.set_index(['ticker', 'ds'], inplace=True)
+
+        # Truncate historical earnings if False
+        if not self.historical_earnings:
+            earnings_df = earnings_df \
+                [earnings_df.index.get_level_values('ds') > dt.date.today().isoformat()]
         return earnings_df
     
     def write_earnings_to_db(self, earnings_df):
@@ -106,5 +114,13 @@ if __name__ == '__main__':
 
     st_db = DBWrapper('SMART_TRADING')
     st_logger = logger('Earnings')
-    ern = Earnings(st_db=st_db, st_logger=st_logger)
+    
+    parser = ArgumentParser()
+    parser.add_argument('--earnings-bootstrap',
+        action='store_true', required=False, default=False,
+        help='Set True to bootstrap historical earnings or False to save only new.')
+    args = parser.parse_args()
+    earnings_bootstrap = args.earnings_bootstrap
+
+    ern = Earnings(st_db=st_db, st_logger=st_logger, historical_earnings=earnings_bootstrap)
     ern.load_earnings_all_tickers('NASDAQ')
