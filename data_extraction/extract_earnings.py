@@ -7,7 +7,7 @@ from constants import *
 
 from libs.PyDB.DBWrapper import DBWrapper
 from libs.st_logger.logger import logger
-from argparse import ArgumentParser
+from args import parse_args
 
 class Earnings(object):
     
@@ -54,10 +54,11 @@ class Earnings(object):
         earnings_df[cols_float] = earnings_df[cols_float].astype(float)
         earnings_df.set_index(['ticker', 'ds'], inplace=True)
 
-        # Truncate historical earnings if False
+        # Truncate historical earnings if False, updates last qtr since some get updated late
         if not self.historical_earnings:
             earnings_df = earnings_df \
-                [earnings_df.index.get_level_values('ds') > dt.date.today().isoformat()]
+                [earnings_df.index.get_level_values('ds') > 
+                    (dt.date.today()-dt.timedelta(days=90)).isoformat()]
         return earnings_df
     
     def write_earnings_to_db(self, earnings_df):
@@ -103,8 +104,9 @@ class Earnings(object):
             try:
                 pdf_earnings = self.get_earnings_features_ticker(ticker)
                 pdf_earnings_all = pd.concat([pdf_earnings_all, pdf_earnings], axis=0)
+                self.logger.info('Extracted earnings data for ticker: {}'.format(ticker))
             except:
-                self.logger.info('Skipped ticker: {}'.format(ticker))
+                self.logger.info('Skipped earnings for ticker: {}'.format(ticker))
         if pdf_earnings_all.shape[0] > 0:
             self.write_earnings_to_db(pdf_earnings_all)
         
@@ -115,12 +117,9 @@ if __name__ == '__main__':
     st_db = DBWrapper('SMART_TRADING')
     st_logger = logger('Earnings')
     
-    parser = ArgumentParser()
-    parser.add_argument('--earnings-bootstrap',
-        action='store_true', required=False, default=False,
-        help='Set True to bootstrap historical earnings or False to save only new.')
-    args = parser.parse_args()
+    args = parse_args()
     earnings_bootstrap = args.earnings_bootstrap
+    stock_index = args.stock_index
 
     ern = Earnings(st_db=st_db, st_logger=st_logger, historical_earnings=earnings_bootstrap)
-    ern.load_earnings_all_tickers('NASDAQ')
+    ern.load_earnings_all_tickers(stock_index)
