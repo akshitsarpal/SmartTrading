@@ -5,13 +5,15 @@ ST_HOME = '/Users/akshit/SmartTrading/'
 sys.path.append(ST_HOME)
 
 today = dt.date.today().isoformat()
-price_store_path = '/Users/akshit/SmartTrading_data/prices/{}/'.format(today)
+PRICE_STORE_PATH = '/Users/akshit/SmartTrading_data/prices/{}/'.format(today)
 
-default_days_intra = 20
-default_days_daily = 10000
-sleep_time_sec = 70
+DEFAULT_DAYS_INTRA = 20 # trucate intraday prices older than 'default_days_intra' days
+DEFAULT_DAYS_DAILY = 10000 # trucate daily prices older than 'default_days_intra' days
+SLEEP_TIME_SEC = 70 # sleep time between AlphaVantage API requests
 
-nasdaq_ll = 85
-nasdaq_ul = 130
-sp500_ll = 450
-sp500_ul = 600
+NASDAQ_LL = 85
+NASDAQ_UL = 130
+SP500_LL = 450
+SP500_UL = 600
+
+TRUNCATE_BUFFER = 90 # today-TRUNCATE_BUFFER is date before which earnings to get truncated
