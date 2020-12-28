@@ -58,7 +58,7 @@ class Earnings(object):
         if not self.historical_earnings:
             earnings_df = earnings_df \
                 [earnings_df.index.get_level_values('ds') > 
-                    (dt.date.today()-dt.timedelta(days=90)).isoformat()]
+                    (dt.date.today()-dt.timedelta(days=TRUNCATE_BUFFER)).isoformat()]
         return earnings_df
     
     def write_earnings_to_db(self, earnings_df):

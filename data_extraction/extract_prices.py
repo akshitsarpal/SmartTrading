@@ -52,19 +52,19 @@ class Stock(object):
     def _check_start_date_format(self):
         if not self.start_date:
             if self.price_type == 'intraday':
-                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_intra))
+                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=DEFAULT_DAYS_INTRA))
                 self.logger.info('''
                 "start_date" not specified, using default of {dy}
                 (business) days, with start date of {dt}.
-                '''.format(dy=default_days_intra, 
+                '''.format(dy=DEFAULT_DAYS_INTRA, 
                            dt=self.start_date.isoformat()))
                 return
             elif self.price_type == 'daily':
-                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=default_days_daily))
+                self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=DEFAULT_DAYS_DAILY))
                 self.logger.info('''
                 "start_date" not specified, using default of {dy}
                 (business) days, with start date of {dt}.
-                '''.format(dy=default_days_daily, 
+                '''.format(dy=DEFAULT_DAYS_DAILY, 
                            dt=self.start_date.isoformat()))
                 return
         elif isinstance(self.start_date, str):
@@ -85,7 +85,7 @@ class Stock(object):
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
             self.tickers_df = payload[0]
             self.tickers_df = self.tickers_df.rename({'Symbol':'Ticker'}, axis=1)
-            if not (len(self.tickers_df.index) > sp500_ll) and (len(self.tickers_df.index) < sp500_ul):
+            if not (len(self.tickers_df.index) > SP500_LL) and (len(self.tickers_df.index) < SP500_UL):
                 ValueError('Check wikipedia data source for SP 500 at \
                              https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
             self.logger.info('Fetched stock tickers from SP500.')
@@ -94,7 +94,7 @@ class Stock(object):
             self.logger.info('Getting stock tickers for NASDAQ from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/NASDAQ-100#Components', header=0)
             self.tickers_df = payload[3]
-            if not (len(self.tickers_df.index) > nasdaq_ll) and (len(self.tickers_df.index) < nasdaq_ul):
+            if not (len(self.tickers_df.index) > NASDAQ_LL) and (len(self.tickers_df.index) < NASDAQ_UL):
                 ValueError('Check wikipedia data source for NASDAQ at \
                              https://en.wikipedia.org/wiki/NASDAQ-100#Components')
             self.logger.info('Fetched stock tickers from NASDAQ.')
@@ -182,7 +182,7 @@ class Stock(object):
     def write_to_csv(self, ticker_prices, today):
         ticker = ticker_prices.index.levels[0][0]
         try:
-            filepath = price_store_path + ticker + '_' + \
+            filepath = PRICE_STORE_PATH + ticker + '_' + \
                        self.price_type + '_' + today + '.csv'
             ticker_prices.to_csv(filepath, index=True)
             self.logger.info('{}: Saved prices.'.format(ticker))
@@ -201,9 +201,9 @@ class Stock(object):
         n_proc = max(cpu_count()-1, 4)
         self.pool = Pool(n_proc)
         today = dt.date.today().strftime('%Y_%m_%d')
-        if not os.path.isdir(price_store_path):
-            os.mkdir(price_store_path)
-            self.logger.info('Created directory to save csvs: {}'.format(price_store_path))
+        if not os.path.isdir(PRICE_STORE_PATH):
+            os.mkdir(PRICE_STORE_PATH)
+            self.logger.info('Created directory to save csvs: {}'.format(PRICE_STORE_PATH))
         
         # Split into chunks of no more than 5 since Alpha Vantage API takes 5 calls per min 
         tickers_list_chunked = [self.tickers_list[i:i+n_proc] 
@@ -223,7 +223,7 @@ class Stock(object):
                         self.write_to_csv(ticker_prices, today)
 
             t_elapsed = round(time.time() - t_start, 2)
-            if t_elapsed < sleep_time_sec:
+            if t_elapsed < SLEEP_TIME_SEC:
                 self.logger.info("System sleep {} sec ....".format(sleep_time_sec - t_elapsed))
                 time.sleep(sleep_time_sec - t_elapsed)
 
