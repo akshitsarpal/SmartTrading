@@ -224,8 +224,8 @@ class Stock(object):
 
             t_elapsed = round(time.time() - t_start, 2)
             if t_elapsed < SLEEP_TIME_SEC:
-                self.logger.info("System sleep {} sec ....".format(sleep_time_sec - t_elapsed))
-                time.sleep(sleep_time_sec - t_elapsed)
+                self.logger.info("System sleep {} sec ....".format(SLEEP_TIME_SEC - t_elapsed))
+                time.sleep(SLEEP_TIME_SEC - t_elapsed)
 
         self.pool.close()
         self.pool.join() 
