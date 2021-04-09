@@ -17,16 +17,14 @@ def parse_args():
     parser.add_argument('--start-date',
         type=str, required=False, default=None,
         help='Start date for stock prices to extract.')
-
     parser.add_argument('--earnings-bootstrap',
         action='store_true', required=False, default=False,
-        help='Set True to bootstrap historical earnings or False to save only new.')
-    
+        help='''Set True to bootstrap historical earnings or False to save 
+                only recent within last TRUNCATE_BUFFER days.''')
     parser.add_argument('--write-csv', 
         action='store_true', required=False, default=False,
         help='Whether to write prices to csvs.')
     parser.add_argument('--write-db', 
         action='store_true', required=False, default=False,
         help='Whether to write prices to db.')
-
     return parser.parse_args()
