@@ -242,9 +242,7 @@ class Stock(object):
 
 
 if __name__=='__main__':
-    
     st_logger = logger('ExtractPrices')
-
     args = parse_args()
     tickers_list = args.tickers_list
     stock_index = args.stock_index
@@ -253,9 +251,7 @@ if __name__=='__main__':
     start_date = args.start_date
     write_csv = args.write_csv
     write_db = args.write_db
-
     st_db = DBWrapper('SMART_TRADING')
-
     ts = TimeSeries()
     s = Stock(tickers_list=tickers_list, stock_index=stock_index,
               price_type=price_type, ts=ts, after_hours=after_hours, 
@@ -264,6 +260,5 @@ if __name__=='__main__':
     if not s.tickers_list:
         s.get_tickers_from_index()
         st_logger.info('Extracted stock tickers from Index: {}'.format(s.stock_index))
-    
     s.get_list_stock_prices()
 

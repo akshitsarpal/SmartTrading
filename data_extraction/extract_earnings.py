@@ -113,13 +113,10 @@ class Earnings(object):
 
 
 if __name__ == '__main__':
-
     st_db = DBWrapper('SMART_TRADING')
     st_logger = logger('Earnings')
-    
     args = parse_args()
     earnings_bootstrap = args.earnings_bootstrap
     stock_index = args.stock_index
-
     ern = Earnings(st_db=st_db, st_logger=st_logger, historical_earnings=earnings_bootstrap)
     ern.load_earnings_all_tickers(stock_index)
