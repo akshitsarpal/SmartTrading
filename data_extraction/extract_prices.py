@@ -1,4 +1,7 @@
-
+'''
+This module is used for extracting and saving list of tickers belonging to top stock indices, 
+and extracting historical stock prices and writing 
+'''
 
 import pandas as pd
 import numpy as np
@@ -17,12 +20,77 @@ import auth
 
 class Stock(object):
     '''
-    Extracts tickers for given indices, and extracts intraday or daily stock prices.
+    A class to represent stock tickers and their prices
+
+    ...
+
+    Attributes
+    ----------
+    logger : st_logger.logger
+        object of class st_logger.logger
+    tickers_df : pandas.DataFrame
+        a dataframe with list of stock tickers in given index
+    tickers_list : list[str]
+        a list of tickers to be used, if specified 
+    stock_index : str
+        stock index to use, currently supports 'SP500' or 'NASDAQ'
+    price_type : str
+        type of price, currently supports 'intraday' or 'daily'
+    ts : alpha_vantage.timeseries.TimeSeries
+        object to invoke AlphaVantage API calls ofr price extraction
+    after_hours : bool
+        False if after-hours prices are to be truncated
+    start_date : str
+        start date to truncate prices at
+    write_csv : bool
+        True if output is to be written as csv in the location specified in config
+    write_db : bool
+        True if output is to be written in database
+    st_db : PyDB.DBWrapper.DBWrappper
+        DBWrapper object for interacting with database
+
+    Methods
+    -------
+    update_tickers_db()
+        reads tickers list in the given index from Wiki and writes to database
+    get_tickers_from_index()
+        reads list of tickers in the given index from database
+    get_prices_av(stock_ticker)
+        extracts stock price for gven ticker using AlphaVantage API
+    write_to_db(ticker_prices)
+        write ticker prices to database
+    write_to_csv(ticker_prices, today)
+        write ticker prices to csv in the folder under directory specified in config
     '''
+
     def __init__(self, tickers_list=[],stock_index=None,
                  price_type=None, ts=None, after_hours=False, 
                  start_date=None, write_csv=False, write_db=False,
                  st_db=None, st_logger=None):
+        '''
+        Parameters
+        ----------
+        tickers_list : list[str], optional
+            A list of tickers to be used, if specified 
+        stock_index : str, optional
+            Stock index to use, currently supports 'SP500' or 'NASDAQ' (default is 'NASDAQ')
+        price_type : str
+            Type of price, currently supports 'intraday' or 'daily'
+        ts : alpha_vantage.timeseries.TimeSeries
+            Object to invoke AlphaVantage API calls ofr price extraction
+        after_hours : bool, optional
+            False if after-hours prices are to be truncated (default=False)
+        start_date : str, optional
+            Start date to truncate prices at, uses default from config if missing
+        write_csv : bool, optional
+            True if output is to be written as csv in the location specified in config (default=False)
+        write_db : bool, optional
+            True if output is to be written in database (default=False)
+        st_db : PyDB.DBWrapper.DBWrappper, optional
+            DBWrapper object for interacting with database (default=None)
+        st_logger : st_logger.logger
+            An object of class logger
+        '''
         self.logger = st_logger
         self.tickers_df = None
         self.tickers_list = tickers_list
@@ -44,12 +112,14 @@ class Stock(object):
         
 
     def _remove_digits(self, input_str):
+        '''Removes digits from input string'''
         remove_digits = str.maketrans('', '', digits)
         res = input_str.translate(remove_digits)
         return res
 
 
     def _check_start_date_format(self):
+        '''Check if start date provided else set default start date'''
         if not self.start_date:
             if self.price_type == 'intraday':
                 self.start_date = pd.Timestamp(dt.date.today()-dt.timedelta(days=DEFAULT_DAYS_INTRA))
@@ -77,9 +147,7 @@ class Stock(object):
 
         
     def _refresh_tickers_index(self):
-        '''
-        Get the list of all stocks in a given index.
-        '''
+        '''Get the list of all stocks in a given index'''
         if self.stock_index == 'SP500':
             self.logger.info('Getting stock tickers for SP500 from Wiki .....')
             payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', header=0)
@@ -98,11 +166,10 @@ class Stock(object):
                 ValueError('Check wikipedia data source for NASDAQ at \
                              https://en.wikipedia.org/wiki/NASDAQ-100#Components')
             self.logger.info('Fetched stock tickers from NASDAQ.')
-            
-       
 
 
     def update_tickers_db(self):
+        '''Write updated tickers to database'''
         self._refresh_tickers_index()
         if self.stock_index == 'SP500':
             df = self.tickers_df.rename({'Symbol': 'ticker', 'Security': 'company'},
@@ -119,6 +186,7 @@ class Stock(object):
 
 
     def get_tickers_from_index(self):
+        '''Read tickers in given index from database'''
         qry = '''
         SELECT
             *
@@ -132,8 +200,17 @@ class Stock(object):
 
 
     def get_prices_av(self, stock_ticker):
-        '''
-        Extract prices using the API.
+        '''Extract prices using the API
+
+        Parameters
+        ----------
+        stock_ticker : str
+            Name of stock ticker to get prices for
+
+        Raises
+        ------
+        ValueError 
+            If price_type not in 'intraday' or 'daily'
         '''
         if self.price_type in ['intraday', 'daily']:
             try:
@@ -166,6 +243,18 @@ class Stock(object):
 
 
     def write_to_db(self, ticker_prices):
+        '''Writes ticker prices to database
+
+        Attributes
+        ----------
+        ticker_prices : pd.DataFrame
+            A dataframe of extracted prices to write to database
+
+        Raises
+        ------
+        ValueError
+            If price_type not in 'intraday' or 'daily'
+        '''
         try:
             if self.price_type == 'daily':
                 self.st_db.executeWriteQuery(ticker_prices, 'daily_prices', index=True)
@@ -180,6 +269,20 @@ class Stock(object):
 
 
     def write_to_csv(self, ticker_prices, today):
+        '''Writes ticker prices to csv
+
+        Attributes
+        ----------
+        ticker_prices : pd.DataFrame
+            A dataframe of extracted prices to write to database
+        today : str
+            Today date to create subdirectory for writing csv in
+
+        Raises
+        ------
+        ValueError
+            If price_type not in 'intraday' or 'daily'
+        '''
         ticker = ticker_prices.index.levels[0][0]
         try:
             filepath = PRICE_STORE_PATH + ticker + '_' + \
@@ -191,8 +294,12 @@ class Stock(object):
     
 
     def get_list_stock_prices(self):
-        '''
-        Fetch stock price for list of tickers.
+        '''Fetch stock price for list of tickers
+
+        Raises
+        ------
+        KeyError
+            If ticker list is not available in the attribute. 
         '''
         self._check_start_date_format()
         if not self.tickers_list:
