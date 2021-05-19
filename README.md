@@ -1,6 +1,6 @@
 # SmartTrading
 
-The objective is to extract stock price data, model and forecast prices. Data is currently being extracted using a couple of APIs and stored in a local MySQL instance. 
+The objective is to extract stock price data, model and forecast prices. Data is currently being extracted using a couple of APIs and stored in a local MySQL instance. Two active users by the IDs `akshitsarpal` and `sarpalak` have made commits; both accounts are owned by the repo owner Akshit Sarpal. 
 
 
 ### 1. Extract Stock Prices 
